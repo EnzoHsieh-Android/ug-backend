@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - MODEL_URL=http://host.docker.internal:8080
+      - PORT=3000
+    # On macOS, host.docker.internal resolves to the host machine.
+    # Start mlx_lm.server on the host first:
+    #   cd /Users/xiechengru/ug-finetune
+    #   .venv/bin/python3 -m mlx_lm.server --model model/Qwen3-4B-UG-order-v4 --port 8080

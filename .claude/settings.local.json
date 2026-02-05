@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/xiechengru/AndroidStudioProjects/ugfrontenddemo",
+      "/Users/xiechengru/ug-finetune/model/Qwen3-4B-UG-order-v4"
+    ]
+  }
+}
