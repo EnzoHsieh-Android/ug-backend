@@ -16,7 +16,7 @@ func main() {
 
 	// Initialize services
 	llm := service.NewLLMClient(cfg.ModelURL)
-	stt := service.NewSTTClient(cfg.WhisperURL, cfg.WhisperAPIKey, cfg.WhisperModel, cfg.WhisperTimeout)
+	stt := service.NewSTTClient(cfg.STTURL, cfg.STTAPIKey, cfg.STTModel, cfg.STTTimeout)
 	sessionMgr := service.NewSessionManager(llm, cfg.SessionTTL, cfg.SessionCleanupInterval, cfg.MaxSegmentsPerSession)
 
 	// Initialize handlers
@@ -50,7 +50,7 @@ func main() {
 		r.Post("/{id}/cancel", sessionHandler.CancelSession)
 	})
 
-	log.Printf("Starting server on :%s (model: %s, whisper: %s)", cfg.Port, cfg.ModelURL, cfg.WhisperURL)
+	log.Printf("Starting server on :%s (model: %s, stt: %s/%s)", cfg.Port, cfg.ModelURL, cfg.STTURL, cfg.STTModel)
 	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
 		log.Fatal(err)
 	}

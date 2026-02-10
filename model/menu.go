@@ -9,6 +9,8 @@ type MenuItem struct {
 	HasSize     bool     `json:"has_size"`               // Whether item has M/L options
 	IceOptions  []string `json:"ice_options,omitempty"`  // Available ice options (nil = all)
 	ColdOnly    bool     `json:"cold_only,omitempty"`    // Only cold drinks available
+	Description string   `json:"description,omitempty"`  // Flavor description for recommendations
+	Tags        []string `json:"tags,omitempty"`         // Taste/scenario tags for filtering
 }
 
 // Addon represents an add-on option

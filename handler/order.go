@@ -52,8 +52,8 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse and validate
-	result, err := service.ParseAndValidate(raw)
+	// Parse and validate (supports intent-based and legacy formats)
+	result, err := service.ParseIntentResponse(raw)
 	if err != nil {
 		log.Printf("Validation error: %v, raw: %s", err, raw)
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -64,15 +64,22 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note := ""
-	if len(result.Warnings) > 0 {
-		note = strings.Join(result.Warnings, "；")
+	// Combine model note and validation warnings
+	var noteParts []string
+	if result.Note != "" {
+		noteParts = append(noteParts, result.Note)
 	}
+	if len(result.Warnings) > 0 {
+		noteParts = append(noteParts, result.Warnings...)
+	}
+	note := strings.Join(noteParts, "；")
 
 	json.NewEncoder(w).Encode(model.APIResponse{
-		Success: true,
-		Orders:  result.Orders,
-		Note:    note,
-		Raw:     raw,
+		Success:         true,
+		Intent:          result.Intent,
+		Orders:          result.Orders,
+		Recommendations: result.Recommendations,
+		Note:            note,
+		Raw:             raw,
 	})
 }

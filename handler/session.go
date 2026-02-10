@@ -52,11 +52,14 @@ func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(model.SessionResponse{
-		SessionID:  s.ID,
-		Status:     s.Status,
-		MergedText: s.MergedText,
-		Orders:     s.Orders,
-		Warnings:   s.Warnings,
+		SessionID:       s.ID,
+		Status:          s.Status,
+		Intent:          s.Intent,
+		MergedText:      s.MergedText,
+		Orders:          s.Orders,
+		Recommendations: s.Recommendations,
+		Note:            s.Note,
+		Warnings:        s.Warnings,
 	})
 }
 
@@ -112,10 +115,16 @@ func (h *SessionHandler) AddSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[Session %s] Whisper 轉錄結果: %s", id, result.Text)
+	log.Printf("[Session %s] ASR 轉錄結果: %s", id, result.Text)
+
+	// Apply STT normalization so the segment text is corrected before storing
+	corrected := service.NormalizeSTT(result.Text)
+	if corrected != result.Text {
+		log.Printf("[Session %s] 拼音校正: %s → %s", id, result.Text, corrected)
+	}
 
 	// Add segment to session
-	s, err := h.sessionMgr.AddSegment(id, result.Text)
+	s, err := h.sessionMgr.AddSegment(id, corrected)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(model.SegmentResponse{Error: err.Error()})
@@ -146,21 +155,30 @@ func (h *SessionHandler) FinalizeSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	log.Printf("[Session %s] 合併文字: %s", id, s.MergedText)
+	log.Printf("[Session %s] 意圖: %s, 合併文字: %s", id, s.Intent, s.MergedText)
 	log.Printf("[Session %s] 解析到 %d 個訂單項目", id, len(s.Orders))
 	for i, order := range s.Orders {
 		log.Printf("[Session %s] 訂單 %d: %s (size=%v, sugar=%v, ice=%v)", id, i+1, order.Item, order.Size, order.Sugar, order.Ice)
+	}
+	if len(s.Recommendations) > 0 {
+		log.Printf("[Session %s] 推薦 %d 個品項", id, len(s.Recommendations))
+		for i, rec := range s.Recommendations {
+			log.Printf("[Session %s] 推薦 %d: %s (%s)", id, i+1, rec.Item, rec.Reason)
+		}
 	}
 	if len(s.Warnings) > 0 {
 		log.Printf("[Session %s] 警告: %v", id, s.Warnings)
 	}
 
 	json.NewEncoder(w).Encode(model.SessionResponse{
-		SessionID:  s.ID,
-		Status:     s.Status,
-		MergedText: s.MergedText,
-		Orders:     s.Orders,
-		Warnings:   s.Warnings,
+		SessionID:       s.ID,
+		Status:          s.Status,
+		Intent:          s.Intent,
+		MergedText:      s.MergedText,
+		Orders:          s.Orders,
+		Recommendations: s.Recommendations,
+		Note:            s.Note,
+		Warnings:        s.Warnings,
 	})
 }
 

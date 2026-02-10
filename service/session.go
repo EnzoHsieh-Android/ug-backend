@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/xiechengru/ug-backend/model"
 )
+
+// nextOrderID generates an incrementing order ID for the session
+func nextOrderID(s *model.Session) string {
+	s.OrderIDCounter++
+	return strconv.Itoa(s.OrderIDCounter)
+}
 
 // SessionManager manages voice ordering sessions with in-memory storage
 type SessionManager struct {
@@ -168,8 +175,8 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 		return nil, fmt.Errorf("LLM error: %w", err)
 	}
 
-	// Parse and validate
-	result, err := ParseAndValidate(raw)
+	// Parse and validate (supports intent-based and legacy formats)
+	result, err := ParseIntentResponse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("validation error: %w", err)
 	}
@@ -178,6 +185,22 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	finalOrders := sm.mergeWithOverrides(s, result.Orders)
 
 	s.Orders = finalOrders
+
+	// Filter out recommendations already sent to frontend
+	if s.SentRecommendations == nil {
+		s.SentRecommendations = make(map[string]bool)
+	}
+	var newRecs []model.Recommendation
+	for _, rec := range result.Recommendations {
+		if !s.SentRecommendations[rec.Item] {
+			newRecs = append(newRecs, rec)
+			s.SentRecommendations[rec.Item] = true
+		}
+	}
+	s.Recommendations = newRecs
+
+	s.Intent = result.Intent
+	s.Note = result.Note
 	s.Warnings = result.Warnings
 	s.Status = model.StatusPending
 	s.UpdatedAt = time.Now()
@@ -185,29 +208,73 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	return s, nil
 }
 
-// mergeWithOverrides implements the field-level merge algorithm
+// mergeWithOverrides implements the field-level merge algorithm using order ID matching.
+// Matching priority: (item + base category) exact match → item-only fallback match.
+// Manually deleted items are skipped; manually added items are always preserved.
 func (sm *SessionManager) mergeWithOverrides(s *model.Session, llmOrders []model.Order) []model.Order {
 	var finalOrders []model.Order
 
-	// Process LLM orders
-	for _, llmOrder := range llmOrders {
-		override, exists := s.Overrides[llmOrder.Item]
-
-		if exists && override.Deleted {
-			// Item was deleted manually - skip it
+	// Collect matchable overrides from s.Orders (preserving order).
+	// Only non-deleted, non-manually-added overrides participate in matching.
+	type candidate struct {
+		id       string
+		override *model.OrderOverride
+		used     bool
+	}
+	var candidates []*candidate
+	for _, o := range s.Orders {
+		if o.ID == "" {
 			continue
 		}
+		ov, ok := s.Overrides[o.ID]
+		if !ok || ov.Deleted || ov.ManuallyAdded {
+			continue
+		}
+		candidates = append(candidates, &candidate{id: o.ID, override: ov})
+	}
 
-		if exists && !override.ManuallyAdded {
-			// Existing item with potential manual overrides
-			merged := sm.mergeOrder(override, llmOrder)
+	// Match each LLM order to an existing override
+	for _, llmOrder := range llmOrders {
+		var matched *candidate
+
+		// Pass 1: exact match on (item + base category)
+		for _, c := range candidates {
+			if c.used {
+				continue
+			}
+			if c.override.BaseOrder.Item == llmOrder.Item && c.override.BaseOrder.Category == llmOrder.Category {
+				matched = c
+				break
+			}
+		}
+
+		// Pass 2: item-only fallback (handles category override case)
+		if matched == nil {
+			for _, c := range candidates {
+				if c.used {
+					continue
+				}
+				if c.override.BaseOrder.Item == llmOrder.Item {
+					matched = c
+					break
+				}
+			}
+		}
+
+		if matched != nil {
+			matched.used = true
+			// Merge fields and preserve original ID
+			merged := sm.mergeOrder(matched.override, llmOrder)
+			merged.ID = matched.id
 			// Update base order for next comparison
-			override.BaseOrder = llmOrder
+			matched.override.BaseOrder = llmOrder
 			finalOrders = append(finalOrders, merged)
-		} else if !exists {
-			// New item from LLM
-			s.Overrides[llmOrder.Item] = &model.OrderOverride{
-				ItemName:        llmOrder.Item,
+		} else {
+			// New item from LLM — assign new ID
+			newID := nextOrderID(s)
+			llmOrder.ID = newID
+			s.Overrides[newID] = &model.OrderOverride{
+				OrderID:         newID,
 				BaseOrder:       llmOrder,
 				ManualOverrides: make(map[string]interface{}),
 				Deleted:         false,
@@ -217,12 +284,19 @@ func (sm *SessionManager) mergeWithOverrides(s *model.Session, llmOrders []model
 		}
 	}
 
-	// Add manually added items that LLM didn't return
-	for _, override := range s.Overrides {
-		if override.ManuallyAdded && !override.Deleted {
-			// Reconstruct order from base + manual overrides
-			order := override.BaseOrder
-			applyManualOverrides(&order, override.ManualOverrides)
+	// Add manually added + non-deleted items (preserved across re-finalize)
+	for _, o := range s.Orders {
+		if o.ID == "" {
+			continue
+		}
+		ov, ok := s.Overrides[o.ID]
+		if !ok {
+			continue
+		}
+		if ov.ManuallyAdded && !ov.Deleted {
+			order := ov.BaseOrder
+			order.ID = o.ID
+			applyManualOverrides(&order, ov.ManualOverrides)
 			finalOrders = append(finalOrders, order)
 		}
 	}
@@ -237,6 +311,15 @@ func (sm *SessionManager) mergeOrder(override *model.OrderOverride, llmOrder mod
 	// For each field, check if LLM changed it from base
 	// If LLM value == Base value && manual override exists -> use manual override
 	// If LLM value != Base value -> use LLM value, clear manual override
+
+	// Category
+	if llmOrder.Category != override.BaseOrder.Category {
+		delete(override.ManualOverrides, "category")
+	} else if val, ok := override.ManualOverrides["category"]; ok {
+		if cat, ok := val.(string); ok {
+			result.Category = cat
+		}
+	}
 
 	// Sugar
 	llmSugar := ptrToStr(llmOrder.Sugar)
@@ -309,7 +392,8 @@ func (sm *SessionManager) mergeOrder(override *model.OrderOverride, llmOrder mod
 	return result
 }
 
-// UpdateOrders handles manual order modifications (PATCH /orders)
+// UpdateOrders handles manual order modifications (PATCH /orders).
+// Uses order ID to track changes. Orders without an ID are treated as manually added.
 func (sm *SessionManager) UpdateOrders(id string, newOrders []model.Order) (*model.Session, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -323,28 +407,31 @@ func (sm *SessionManager) UpdateOrders(id string, newOrders []model.Order) (*mod
 		return nil, fmt.Errorf("cannot update orders: session status is %s", s.Status)
 	}
 
-	// Build map of current orders
+	// Build map of current orders by ID
 	currentMap := make(map[string]*model.Order)
 	for i := range s.Orders {
-		currentMap[s.Orders[i].Item] = &s.Orders[i]
+		if s.Orders[i].ID != "" {
+			currentMap[s.Orders[i].ID] = &s.Orders[i]
+		}
 	}
 
-	// Build map of new orders
-	newMap := make(map[string]*model.Order)
+	// Build map of new orders by ID (orders without ID are new)
+	newByID := make(map[string]*model.Order)
 	for i := range newOrders {
-		newMap[newOrders[i].Item] = &newOrders[i]
+		if newOrders[i].ID != "" {
+			newByID[newOrders[i].ID] = &newOrders[i]
+		}
 	}
 
-	// Detect changes
-	// 1. Items in current but not in new -> mark as deleted
-	for item := range currentMap {
-		if _, exists := newMap[item]; !exists {
-			if override, ok := s.Overrides[item]; ok {
+	// 1. Current orders not in new list -> mark as deleted
+	for oid, curOrder := range currentMap {
+		if _, exists := newByID[oid]; !exists {
+			if override, ok := s.Overrides[oid]; ok {
 				override.Deleted = true
 			} else {
-				s.Overrides[item] = &model.OrderOverride{
-					ItemName:        item,
-					BaseOrder:       *currentMap[item],
+				s.Overrides[oid] = &model.OrderOverride{
+					OrderID:         oid,
+					BaseOrder:       *curOrder,
 					ManualOverrides: make(map[string]interface{}),
 					Deleted:         true,
 					ManuallyAdded:   false,
@@ -353,12 +440,14 @@ func (sm *SessionManager) UpdateOrders(id string, newOrders []model.Order) (*mod
 		}
 	}
 
-	// 2. Items in new but not in current -> manually added
-	for item, newOrder := range newMap {
-		if _, exists := currentMap[item]; !exists {
-			s.Overrides[item] = &model.OrderOverride{
-				ItemName:        item,
-				BaseOrder:       *newOrder,
+	// 2. New orders without ID -> manually added, assign new ID
+	for i := range newOrders {
+		if newOrders[i].ID == "" {
+			newID := nextOrderID(s)
+			newOrders[i].ID = newID
+			s.Overrides[newID] = &model.OrderOverride{
+				OrderID:         newID,
+				BaseOrder:       newOrders[i],
 				ManualOverrides: make(map[string]interface{}),
 				Deleted:         false,
 				ManuallyAdded:   true,
@@ -366,29 +455,35 @@ func (sm *SessionManager) UpdateOrders(id string, newOrders []model.Order) (*mod
 		}
 	}
 
-	// 3. Items in both -> detect field changes
-	for item, newOrder := range newMap {
-		curOrder, exists := currentMap[item]
+	// 3. Orders with ID present in both -> detect field changes
+	for i := range newOrders {
+		newOrder := &newOrders[i]
+		oid := newOrder.ID
+		curOrder, exists := currentMap[oid]
 		if !exists {
 			continue
 		}
 
-		override, ok := s.Overrides[item]
+		override, ok := s.Overrides[oid]
 		if !ok {
 			override = &model.OrderOverride{
-				ItemName:        item,
+				OrderID:         oid,
 				BaseOrder:       *curOrder,
 				ManualOverrides: make(map[string]interface{}),
 				Deleted:         false,
 				ManuallyAdded:   false,
 			}
-			s.Overrides[item] = override
+			s.Overrides[oid] = override
 		}
 
 		// Un-delete if was deleted
 		override.Deleted = false
 
-		// Record field-level changes
+		// Record field-level changes (including category)
+		if newOrder.Category != curOrder.Category {
+			override.ManualOverrides["category"] = newOrder.Category
+		}
+
 		if ptrToStr(newOrder.Sugar) != ptrToStr(curOrder.Sugar) {
 			if newOrder.Sugar == nil {
 				override.ManualOverrides["sugar"] = nil
@@ -449,7 +544,12 @@ func (sm *SessionManager) Reset(id string) (*model.Session, error) {
 	s.Segments = []model.Segment{}
 	s.MergedText = ""
 	s.Orders = []model.Order{}
+	s.Recommendations = nil
+	s.SentRecommendations = nil
+	s.Intent = ""
+	s.Note = ""
 	s.Overrides = make(map[string]*model.OrderOverride)
+	s.OrderIDCounter = 0
 	s.Warnings = []string{}
 	s.Status = model.StatusActive
 	s.UpdatedAt = time.Now()
@@ -565,6 +665,10 @@ func sliceEqual(a, b []string) bool {
 func applyManualOverrides(order *model.Order, overrides map[string]interface{}) {
 	for field, val := range overrides {
 		switch field {
+		case "category":
+			if cat, ok := val.(string); ok {
+				order.Category = cat
+			}
 		case "sugar":
 			if val == nil {
 				order.Sugar = nil

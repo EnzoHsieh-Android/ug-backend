@@ -13,11 +13,11 @@ type Config struct {
 	// LLM Model
 	ModelURL string
 
-	// Whisper STT
-	WhisperURL    string
-	WhisperAPIKey string
-	WhisperModel  string
-	WhisperTimeout time.Duration
+	// STT (Qwen3-ASR-Flash via DashScope)
+	STTURL     string
+	STTAPIKey  string
+	STTModel   string
+	STTTimeout time.Duration
 
 	// Session
 	SessionTTL             time.Duration
@@ -31,10 +31,10 @@ func Load() *Config {
 		Port:     getEnv("PORT", "3000"),
 		ModelURL: getEnv("MODEL_URL", "http://localhost:8080"),
 
-		WhisperURL:     getEnv("WHISPER_URL", "http://localhost:9000"),
-		WhisperAPIKey:  getEnv("WHISPER_API_KEY", ""),
-		WhisperModel:   getEnv("WHISPER_MODEL", "whisper-1"),
-		WhisperTimeout: getDuration("WHISPER_TIMEOUT", 30*time.Second),
+		STTURL:     getEnv("STT_URL", "https://dashscope-intl.aliyuncs.com"),
+		STTAPIKey:  getEnv("STT_API_KEY", ""),
+		STTModel:   getEnv("STT_MODEL", "qwen3-asr-flash"),
+		STTTimeout: getDuration("STT_TIMEOUT", 60*time.Second),
 
 		SessionTTL:             getDuration("SESSION_TTL", 30*time.Minute),
 		SessionCleanupInterval: getDuration("SESSION_CLEANUP_INTERVAL", 5*time.Minute),

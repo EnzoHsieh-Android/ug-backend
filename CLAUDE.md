@@ -13,8 +13,8 @@ Go REST API backend for a tea shop ordering system. Supports two modes:
 ## Common Commands
 
 ```bash
-# Run the server (requires LLM model on port 8080 + Whisper STT)
-WHISPER_URL=https://api.openai.com WHISPER_API_KEY=<key> go run main.go
+# Run the server (requires LLM model on port 8080 + DashScope API key)
+STT_API_KEY=<dashscope-key> go run main.go
 
 # Build
 go build -o ug-backend .
@@ -39,10 +39,10 @@ docker-compose up
 
 - `PORT` - Server port (default: `3000`)
 - `MODEL_URL` - LLM API endpoint (default: `http://localhost:8080`)
-- `WHISPER_URL` - Whisper STT API base URL (default: `http://localhost:9000`)
-- `WHISPER_API_KEY` - Whisper API key (default: empty)
-- `WHISPER_MODEL` - Whisper model name (default: `whisper-1`)
-- `WHISPER_TIMEOUT` - STT request timeout (default: `30s`)
+- `STT_URL` - Qwen3-ASR-Flash API base URL (default: `https://dashscope-intl.aliyuncs.com`)
+- `STT_API_KEY` - DashScope API key (required)
+- `STT_MODEL` - ASR model name (default: `qwen3-asr-flash`)
+- `STT_TIMEOUT` - STT request timeout (default: `60s`)
 - `SESSION_TTL` - Session expiry time (default: `30m`)
 - `MAX_SEGMENTS_PER_SESSION` - Max voice segments per session (default: `20`)
 - `MAX_AUDIO_SIZE_MB` - Max audio upload size (default: `25`)
@@ -67,7 +67,7 @@ main.go                 # Entry point, chi router setup
     ├── menu.go         # Menu data and lookup
     ├── normalizer.go   # STT typo correction (exact + fuzzy Pinyin)
     ├── session.go      # Session lifecycle management
-    ├── stt.go          # Whisper STT client (OpenAI compatible)
+    ├── stt.go          # Qwen3-ASR-Flash STT client (DashScope API)
     └── validator.go    # Order validation against menu
 ```
 
@@ -99,15 +99,26 @@ POST   /api/session/{id}/cancel    # Cancel session
 POST /api/order {"text": "..."}
   → NormalizeSTT() - two-tier typo correction
   → LLMClient.Complete() - send to model
-  → ParseAndValidate() - parse JSON, validate against menu
-  → Return APIResponse with orders/warnings
+  → ParseIntentResponse() - parse JSON, validate against menu, fillDefaults
+  → Return APIResponse with orders/recommendations/warnings
 ```
 
 ## Request Flow (Session)
 
 ```
 CreateSession → [AddSegment (audio → STT)] × N → Finalize → [UpdateOrders] → Confirm → Complete
+
+Finalize 內部流程：
+  合併所有 segments (用 ";" 分隔) → NormalizeSTT → LLM Complete
+  → ParseIntentResponse (validate + fillDefaults)
+  → 過濾已送出推薦 (SentRecommendations 去重)
+  → 合併 manual overrides → 回傳結果
 ```
+
+## STT (service/stt.go)
+
+Uses Qwen3-ASR-Flash via DashScope API (Singapore international endpoint).
+Audio is base64 encoded and sent as JSON with menu context in system message for domain-specific recognition.
 
 ## STT Normalization System (service/normalizer.go)
 
@@ -125,16 +136,35 @@ Two-layer approach for handling speech-to-text errors:
 - Size: M, L
 - Add-ons: 紅烏龍茶凍, 燕麥粒
 
+### fillDefaults (預設值填入)
+模型輸出 null 表示「顧客未指定」，後端 `fillDefaults()` 負責填入預設值：
+- **Category**: pure_tea 優先 → rich_milk_tea → 第一個匹配的分類
+- **Size**: 有尺寸的品項預設 M，單一尺寸品項設為 nil
+- **Sugar**: 預設「正常糖」
+- **Ice**: 預設「正常冰」
+
+### Intent 推導
+模型不再輸出 intent，由 `ParseIntentResponse()` 從陣列內容推導：
+- orders 非空 → "order"
+- recommendations 非空（無 orders）→ "recommend"
+- 兩者皆空 → "other"
+
+### 推薦去重 (SentRecommendations)
+Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時過濾已送出的推薦品項，避免重複推薦。Reset 時清空。
+
 ## Key Design Decisions
 
 - **Pointer fields** (`*string`) in Order struct indicate optional customizations
 - **NotOnMenu** flag marks items not found in menu instead of rejecting
 - **Session state machine** - enforces valid state transitions (created → recording → pending_order → confirmed → completed)
-- **LLM-dependent** - requires Qwen3-8B fine-tuned model (currently v4, 97% accuracy)
-- **OpenAI-compatible STT** - uses Whisper API with menu prompt for domain-specific recognition
+- **LLM-dependent** - requires Qwen3-8B fine-tuned model
+- **Null output strategy** - model outputs null for unspecified fields, backend fills defaults
+- **Recommendations limited to 1** - system prompt specifies 「僅推薦 1 項」
+- **Qwen3-ASR-Flash STT** - uses DashScope API with menu context in system message for domain-specific recognition
 
 ## Model Training
 
 LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分析與優化流程遵照 `finetune-optimization` skill（詳見 WORKFLOW.md）。
 
-目前模型：Qwen3-8B-UG-order-v4（Round 22, iter 1000, 97% accuracy）
+上一版模型：Qwen3-8B-UG-order-v6（Round 24, iter 700, 98.6% accuracy — order 40/40, recommend 31/32）
+待訓練：Round 26（1250 樣本，null 輸出策略，推薦限 1 項）
