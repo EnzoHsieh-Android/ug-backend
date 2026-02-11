@@ -142,6 +142,10 @@ interface SegmentResponse {
 - `checkout`：僅可 back 或 complete
 - `completed` / `cancelled`：終態，不可操作
 
+**Session 關閉時機：**
+- 結帳完成（`complete`）後，呼叫 `DELETE /api/session/{id}` 關閉 session
+- 使用者回到歡迎頁面時，呼叫 `DELETE /api/session/{id}` 或 `POST /api/session/{id}/cancel` 關閉當前 session
+
 ---
 
 ## 5. 核心流程：語音點餐
