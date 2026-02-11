@@ -4,5 +4,8 @@ ug-backend
 # IDE
 .idea/
 
+# Environment
+.env
+
 # OS
 .DS_Store
