@@ -224,6 +224,19 @@ POST /api/session/{id}/finalize
 
 **重要：** Finalize 可在 `pending` 狀態再次呼叫（使用者追加語音後 re-finalize），此時會觸發 override merge 邏輯。
 
+### 多輪語音：Re-finalize 前同步修改
+
+如果使用者在第一輪 finalize 後手動改了訂單，又錄了第二輪語音，re-finalize 之前必須先把修改同步到後端，否則手動修改會被 LLM 新結果覆蓋。
+
+```
+第一輪: segments → finalize → 顯示訂單
+使用者手動修改訂單（本地狀態）
+第二輪: 錄新語音 → 上傳 segments
+  → 按「分析」前，比對本地訂單有無修改
+  → 有差異 → 先 PATCH /orders，再 POST /finalize
+  → 沒差異 → 直接 POST /finalize
+```
+
 ### Step 4：確認 → 結帳 → 完成
 
 使用者按「送出訂單」時，前端應先比對本地訂單與 finalize 回傳的訂單是否有差異：
