@@ -53,7 +53,7 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse and validate (supports intent-based and legacy formats)
-	result, err := service.ParseIntentResponse(raw)
+	result, err := service.ParseIntentResponse(raw, normalized)
 	if err != nil {
 		log.Printf("Validation error: %v, raw: %s", err, raw)
 		w.WriteHeader(http.StatusUnprocessableEntity)

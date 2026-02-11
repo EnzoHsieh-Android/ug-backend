@@ -79,7 +79,7 @@ func stripModelTokens(raw string) string {
 //   - recommendations non-empty (no orders) → "recommend"
 //   - both non-empty → "order" (mixed)
 //   - both empty → "other" (chitchat/unrecognized)
-func ParseIntentResponse(raw string) (*ValidationResult, error) {
+func ParseIntentResponse(raw string, userText ...string) (*ValidationResult, error) {
 	raw = stripModelTokens(raw)
 
 	var resp model.IntentResponse
@@ -93,6 +93,9 @@ func ParseIntentResponse(raw string) (*ValidationResult, error) {
 	// Validate orders if present
 	if len(resp.Orders) > 0 {
 		orders, warnings := validateOrders(resp.Orders)
+		if len(userText) > 0 {
+			clearUnspecifiedCategory(orders, userText[0])
+		}
 		orders = fillDefaults(orders)
 		result.Orders = orders
 		result.Warnings = warnings
@@ -122,6 +125,55 @@ func ParseIntentResponse(raw string) (*ValidationResult, error) {
 // It delegates to ParseIntentResponse for backward compatibility.
 func ParseAndValidate(raw string) (*ValidationResult, error) {
 	return ParseIntentResponse(raw)
+}
+
+// categoryIDToSuffix maps category ID to the keyword customers use.
+func categoryIDToSuffix(catID string) string {
+	switch catID {
+	case "fresh_milk_tea":
+		return "鮮奶"
+	case "rich_milk_tea":
+		return "奶茶"
+	case "pure_tea":
+		return "純茶"
+	case "cloud_velvet":
+		return "奶蓋"
+	case "fruit_tea":
+		return "果茶"
+	default:
+		return ""
+	}
+}
+
+// clearUnspecifiedCategory resets category to empty for multi-category items
+// when the user text doesn't contain the item name adjacent to a category keyword,
+// so fillDefaults can assign the correct default instead of using the model's guess.
+func clearUnspecifiedCategory(orders []model.Order, userText string) {
+	for i := range orders {
+		o := &orders[i]
+		if o.Category == "" || o.NotOnMenu {
+			continue
+		}
+		// Check if this item exists in multiple categories
+		catCount := 0
+		for _, cat := range menu.Categories {
+			for _, item := range cat.Items {
+				if item.Name == o.Item {
+					catCount++
+				}
+			}
+		}
+		if catCount <= 1 {
+			continue
+		}
+		// Multi-category item: check if the model's chosen category suffix
+		// appears adjacent to this item name in the user text.
+		// e.g. model says fresh_milk_tea → check if "桂花輕烏龍鮮奶" is in text
+		catSuffix := categoryIDToSuffix(o.Category)
+		if catSuffix != "" && !strings.Contains(userText, o.Item+catSuffix) {
+			o.Category = ""
+		}
+	}
 }
 
 // parseLegacyResponse handles the old format: {"orders":[...]}
