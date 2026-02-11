@@ -81,13 +81,14 @@ func (c *STTClient) Transcribe(audioData []byte, filename string, contentType st
 	dataURI := fmt.Sprintf("data:%s;base64,%s", mimeType, b64)
 
 	// Menu context for better recognition — guide ASR with all domain terms
-	menuContext := `這是茶飲店「No.315 Unique Green」的點單語音辨識。
+	menuContext := `這是茶飲店「No.315 Unique Green」的點單語音辨識。請使用繁體中文輸出。
 品項名稱：三窨十五茉、桂花輕烏龍、茶花紅烏龍、茶花烏龍、朱槿普洱紅、米香玉露菁、琥珀鐵觀音、金杯蜜香紅、青檸桂蜜、蜜桃紅烏龍、葡柚十五茉。
-分類：研選純茶、牧場直達、UG奶茶、果香四溢、雲頂奶蓋。
+分類：研選純茶、牧場直達鮮奶茶、UG奶茶、果香四溢、雲頂奶蓋。
 甜度：正常糖、少糖、半糖、微糖、無糖。
 冰量：正常冰、少冰、微冰、去冰、熱飲。
 加料：紅烏龍茶凍、燕麥粒。
 尺寸：中杯、大杯。
+常見用語：鮮奶、鮮奶茶、奶茶、純茶、奶蓋、果茶。
 關鍵詞：窨（xūn）、槿（jǐn）、菁（jīng）、玉露、鐵觀音、烏龍、普洱、茉莉、桂花。`
 
 	reqBody := asrRequest{
