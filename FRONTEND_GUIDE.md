@@ -46,22 +46,22 @@
 
 ## 2. API 端點一覽
 
-| 方法 | 路徑 | 狀態要求 | 說明 |
-|------|------|----------|------|
-| `GET` | `/api/health` | — | 健康檢查 |
-| `GET` | `/api/menu` | — | 取得完整菜單 |
-| `POST` | `/api/order` | — | Legacy 單次文字點餐 |
-| `POST` | `/api/session` | — | 建立新 Session |
-| `GET` | `/api/session/{id}` | 任何 | 取得 Session 狀態 |
-| `DELETE` | `/api/session/{id}` | 任何 | 刪除 Session |
-| `POST` | `/api/session/{id}/segment` | active / pending | 上傳音檔段落 |
-| `POST` | `/api/session/{id}/finalize` | active / pending | 合併段落 → 分析訂單 |
-| `PATCH` | `/api/session/{id}/orders` | pending | 手動修改訂單 |
-| `POST` | `/api/session/{id}/reset` | pending | 重置回錄音狀態 |
-| `POST` | `/api/session/{id}/confirm` | pending | 確認訂單 → 結帳 |
-| `POST` | `/api/session/{id}/back` | checkout | 返回編輯 |
-| `POST` | `/api/session/{id}/complete` | checkout | 完成付款 |
-| `POST` | `/api/session/{id}/cancel` | 非 completed | 取消 Session |
+| 方法 | 路徑 | 狀態要求 | 說明 | 使用場景 |
+|------|------|----------|------|----------|
+| `GET` | `/api/health` | — | 健康檢查 | App 啟動時確認後端是否可用 |
+| `GET` | `/api/menu` | — | 取得完整菜單 | 進入點餐頁面時載入菜單，用於顯示品項列表、分類、價格等 |
+| `POST` | `/api/order` | — | Legacy 單次文字點餐 | 不使用 session 流程時，直接送文字取得解析結果（測試用途為主） |
+| `POST` | `/api/session` | — | 建立新 Session | 使用者進入點餐頁面時建立，取得 session ID 供後續操作 |
+| `GET` | `/api/session/{id}` | 任何 | 取得 Session 狀態 | 頁面重新載入或斷線重連時，恢復當前 session 的訂單與狀態 |
+| `DELETE` | `/api/session/{id}` | 任何 | 刪除 Session | 結帳完成後清理，或使用者回到歡迎頁面時關閉當前 session |
+| `POST` | `/api/session/{id}/segment` | active / pending | 上傳音檔段落 | 使用者每說完一段話，前端錄音結束後上傳音檔，回傳校正後的文字 |
+| `POST` | `/api/session/{id}/finalize` | active / pending | 合併段落 → 分析訂單 | 使用者錄完音按「分析」，後端合併所有段落送 LLM 解析出訂單 |
+| `PATCH` | `/api/session/{id}/orders` | pending | 手動修改訂單 | 使用者在訂單確認頁手動改了甜度、冰量、數量、刪除或新增品項後同步到後端 |
+| `POST` | `/api/session/{id}/reset` | pending | 重置回錄音狀態 | 使用者覺得辨識結果不好想全部重來，清空段落和修改紀錄重新錄音 |
+| `POST` | `/api/session/{id}/confirm` | pending | 確認訂單 → 結帳 | 使用者確認訂單無誤，按「送出訂單」進入結帳流程 |
+| `POST` | `/api/session/{id}/back` | checkout | 返回編輯 | 結帳頁面發現訂單有誤，按「返回修改」回到訂單編輯狀態 |
+| `POST` | `/api/session/{id}/complete` | checkout | 完成付款 | 確認付款完成，訂單結案 |
+| `POST` | `/api/session/{id}/cancel` | 非 completed | 取消 Session | 使用者任何時候按「取消訂單」，放棄整筆訂單 |
 
 ---
 
