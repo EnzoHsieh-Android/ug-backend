@@ -91,7 +91,7 @@ func (c *LLMClient) Complete(userText string) (string, error) {
 			{Role: "user", Content: userText},
 		},
 		Temperature: 0,
-		MaxTokens:   512,
+		MaxTokens:   256,
 	}
 
 	body, err := json.Marshal(reqBody)
