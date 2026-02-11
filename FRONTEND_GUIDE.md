@@ -226,7 +226,17 @@ POST /api/session/{id}/finalize
 
 ### Step 4：確認 → 結帳 → 完成
 
+使用者按「送出訂單」時，前端應先比對本地訂單與 finalize 回傳的訂單是否有差異：
+
+```
+使用者按「送出」
+  → 比對本地訂單 vs finalize 回來的訂單
+  → 有差異 → 先 PATCH /orders 同步修改，再 POST /confirm
+  → 沒差異 → 直接 POST /confirm（省一次請求）
+```
+
 ```http
+PATCH /api/session/{id}/orders   → 有修改時才呼叫
 POST /api/session/{id}/confirm   → status: "checkout"
 POST /api/session/{id}/complete  → status: "completed"
 ```
