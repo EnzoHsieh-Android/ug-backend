@@ -93,9 +93,9 @@ func ParseIntentResponse(raw string, userText ...string) (*ValidationResult, err
 	// Validate orders if present
 	if len(resp.Orders) > 0 {
 		orders, warnings := validateOrders(resp.Orders)
-		if len(userText) > 0 {
-			clearUnspecifiedCategory(orders, userText[0])
-		}
+		// if len(userText) > 0 {
+		// 	clearUnspecifiedCategory(orders, userText[0])
+		// }
 		orders = fillDefaults(orders)
 		result.Orders = orders
 		result.Warnings = warnings

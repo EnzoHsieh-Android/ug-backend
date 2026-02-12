@@ -166,5 +166,11 @@ Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時過濾
 
 LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分析與優化流程遵照 `finetune-optimization` skill（詳見 WORKFLOW.md）。
 
-上一版模型：Qwen3-8B-UG-order-v6（Round 24, iter 700, 98.6% accuracy — order 40/40, recommend 31/32）
-待訓練：Round 26（1250 樣本，null 輸出策略，推薦限 1 項）
+目前模型：Qwen3-8B-UG-order-v8（Round 27, iter 700, 97% accuracy — order 36/37）
+上一版：Qwen3-8B-UG-order-v6（Round 24, iter 700, 98.6%）
+
+### Round 27 變更
+- 甜度改為官方用語：全糖/五分糖/三分糖/一分糖/無糖
+- 模型照錄顧客原話（正常糖/半糖/少糖/微糖），後端 validator 映射
+- 訓練資料：1141 train + 273 valid = 1414 樣本
+- 最佳 checkpoint：iter 700（43/43 泛化測試 100%，700 後有輕微過擬合）
