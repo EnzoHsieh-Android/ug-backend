@@ -113,7 +113,7 @@ var menu = &model.Menu{
 		},
 	},
 	Options: model.MenuOptions{
-		Sugar: []string{"正常糖", "少糖", "半糖", "微糖", "無糖"},
+		Sugar: []string{"全糖", "五分糖", "三分糖", "一分糖", "無糖", "正常糖", "半糖", "少糖", "微糖"},
 		Ice:   []string{"正常冰", "少冰", "微冰", "去冰", "熱飲"},
 		Size:  []string{"M", "L"},
 		Addon: []model.Addon{
@@ -155,7 +155,7 @@ var categorySuffixes = []string{"鮮奶", "奶茶", "純茶", "奶蓋", "果茶"
 // Option suffixes to strip (sweetness, ice, temperature)
 var optionSuffixes = []string{
 	"熱", "熱的", "溫",
-	"無糖", "微糖", "半糖", "少糖", "正常糖",
+	"無糖", "一分糖", "三分糖", "五分糖", "全糖", "微糖", "半糖", "少糖", "正常糖",
 	"去冰", "微冰", "少冰", "正常冰",
 }
 

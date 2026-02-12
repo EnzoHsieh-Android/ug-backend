@@ -167,11 +167,25 @@ func clearUnspecifiedCategory(orders []model.Order, userText string) {
 			continue
 		}
 		// Multi-category item: check if the model's chosen category suffix
-		// appears adjacent to this item name in the user text.
-		// e.g. model says fresh_milk_tea → check if "桂花輕烏龍鮮奶" is in text
+		// appears in the same segment as the item name.
+		// Segments are split by ";" and "。" to match multi-round voice input.
+		// e.g. "桂花輕烏龍要奶蓋" → item + suffix in same segment → keep
 		catSuffix := categoryIDToSuffix(o.Category)
-		if catSuffix != "" && !strings.Contains(userText, o.Item+catSuffix) {
-			o.Category = ""
+		if catSuffix != "" {
+			found := false
+			// Split by ; and 。 to get individual segments
+			segments := strings.FieldsFunc(userText, func(r rune) bool {
+				return r == ';' || r == '；' || r == '。'
+			})
+			for _, seg := range segments {
+				if strings.Contains(seg, o.Item) && strings.Contains(seg, catSuffix) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				o.Category = ""
+			}
 		}
 	}
 }
@@ -335,9 +349,27 @@ func fillDefaults(orders []model.Order) []model.Order {
 			}
 		}
 
+		// Normalize common sugar aliases to official terms
+		if o.Sugar != nil && *o.Sugar != "" {
+			switch *o.Sugar {
+			case "正常糖":
+				s := "全糖"
+				o.Sugar = &s
+			case "半糖":
+				s := "五分糖"
+				o.Sugar = &s
+			case "少糖":
+				s := "五分糖"
+				o.Sugar = &s
+			case "微糖":
+				s := "三分糖"
+				o.Sugar = &s
+			}
+		}
+
 		// Fill default sugar
 		if o.Sugar == nil || *o.Sugar == "" {
-			s := "正常糖"
+			s := "全糖"
 			o.Sugar = &s
 		}
 
