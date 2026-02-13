@@ -226,6 +226,11 @@ func fuzzyReplace(text string) string {
 				}
 			}
 			if isExact {
+				// Mark exact-match positions as protected so fuzzy matches
+				// don't overlap and corrupt correct text.
+				for k := start; k < start+winSize; k++ {
+					replaced[k] = true
+				}
 				continue
 			}
 

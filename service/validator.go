@@ -93,10 +93,11 @@ func ParseIntentResponse(raw string, userText ...string) (*ValidationResult, err
 	// Validate orders if present
 	if len(resp.Orders) > 0 {
 		orders, warnings := validateOrders(resp.Orders)
-		// if len(userText) > 0 {
-		// 	clearUnspecifiedCategory(orders, userText[0])
-		// }
-		orders = fillDefaults(orders)
+		ut := ""
+		if len(userText) > 0 {
+			ut = userText[0]
+		}
+		orders = fillDefaults(orders, ut)
 		result.Orders = orders
 		result.Warnings = warnings
 	}
@@ -234,6 +235,15 @@ func validateOrders(orders []model.Order) ([]model.Order, []string) {
 			o.Sugar = nil
 		}
 
+		// Normalize common ice aliases to official terms
+		if o.Ice != nil && *o.Ice != "" {
+			switch *o.Ice {
+			case "熱", "熱的":
+				ic := "熱飲"
+				o.Ice = &ic
+			}
+		}
+
 		// Validate ice
 		if o.Ice != nil && *o.Ice != "" && !validIce[*o.Ice] {
 			warnings = append(warnings, fmt.Sprintf("冰量「%s」不合法，已清除", *o.Ice))
@@ -314,9 +324,70 @@ func getDefaultCategory(itemName string) string {
 	return ""
 }
 
+// inferCategoryFromText checks user text for category keywords near the item name.
+// Only applies to multi-category items. Returns category ID or empty string.
+func inferCategoryFromText(itemName, userText string) string {
+	if userText == "" {
+		return ""
+	}
+
+	// Only infer for multi-category items
+	catCount := 0
+	for _, cat := range menu.Categories {
+		for _, item := range cat.Items {
+			if item.Name == itemName {
+				catCount++
+			}
+		}
+	}
+	if catCount <= 1 {
+		return ""
+	}
+
+	// Ordered keyword → category mapping (鮮奶 before 奶茶 to avoid 鮮奶茶 mis-match)
+	type kw struct {
+		keyword string
+		catID   string
+	}
+	keywords := []kw{
+		{"鮮奶", "fresh_milk_tea"},
+		{"奶精", "rich_milk_tea"},
+		{"奶蓋", "cloud_velvet"},
+		{"純茶", "pure_tea"},
+		{"奶茶", "rich_milk_tea"},
+	}
+
+	// Split by ; and 。 to get individual segments
+	segments := strings.FieldsFunc(userText, func(r rune) bool {
+		return r == ';' || r == '；' || r == '。'
+	})
+
+	for _, seg := range segments {
+		if !strings.Contains(seg, itemName) {
+			continue
+		}
+		for _, k := range keywords {
+			if strings.Contains(seg, k.keyword) {
+				// Verify this item exists in this category
+				for _, cat := range menu.Categories {
+					if cat.ID == k.catID {
+						for _, item := range cat.Items {
+							if item.Name == itemName {
+								return k.catID
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 // fillDefaults fills in default values for on-menu items where the model output null.
 // This handles: category, size, sugar, ice defaults so the model doesn't need to.
-func fillDefaults(orders []model.Order) []model.Order {
+func fillDefaults(orders []model.Order, userText string) []model.Order {
 	for i := range orders {
 		o := &orders[i]
 
@@ -325,13 +396,16 @@ func fillDefaults(orders []model.Order) []model.Order {
 			continue
 		}
 
-		// Fill default category
+		// Fill default category: infer from user text first, then fallback
 		if o.Category == "" {
-			o.Category = getDefaultCategory(o.Item)
+			if cat := inferCategoryFromText(o.Item, userText); cat != "" {
+				o.Category = cat
+			} else {
+				o.Category = getDefaultCategory(o.Item)
+			}
 		}
 
-		// Fill default size based on category
-		// Look up whether item has size in this category
+		// Fill default size and enforce ColdOnly based on category
 		for _, cat := range menu.Categories {
 			if cat.ID == o.Category {
 				for _, item := range cat.Items {
@@ -341,6 +415,10 @@ func fillDefaults(orders []model.Order) []model.Order {
 						} else if o.Size == nil || *o.Size == "" {
 							m := "M"
 							o.Size = &m
+						}
+						if item.ColdOnly && o.Ice != nil && *o.Ice == "熱飲" {
+							ic := "正常冰"
+							o.Ice = &ic
 						}
 						break
 					}

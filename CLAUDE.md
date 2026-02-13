@@ -166,11 +166,19 @@ Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時過濾
 
 LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分析與優化流程遵照 `finetune-optimization` skill（詳見 WORKFLOW.md）。
 
-目前模型：Qwen3-8B-UG-order-v8（Round 27, iter 700, 97% accuracy — order 36/37）
-上一版：Qwen3-8B-UG-order-v6（Round 24, iter 700, 98.6%）
+目前模型：Qwen3-8B-UG-order-v10（Round 30, iter 800, 96% eval — 48/50, diversity 37/37 100%）
+上一版：Qwen3-8B-UG-order-v9（Round 29, iter 700, 96% — 48/50）
 
-### Round 27 變更
-- 甜度改為官方用語：全糖/五分糖/三分糖/一分糖/無糖
-- 模型照錄顧客原話（正常糖/半糖/少糖/微糖），後端 validator 映射
-- 訓練資料：1141 train + 273 valid = 1414 樣本
-- 最佳 checkpoint：iter 700（43/43 泛化測試 100%，700 後有輕微過擬合）
+### Round 30 變更
+- 新增奶蓋/茶凍消歧訓練資料（cloud_velvet vs addon 紅烏龍茶凍）
+- 後端 ice 別名正規化（"熱"/"熱的" → "熱飲"）
+- 後端 inferCategoryFromText：從 user text 推斷多分類品項 category
+- 修復 normalizer fuzzy pinyin 重疊窗口 bug（exact-match 位置保護）
+- 訓練資料：1305 train + 313 valid = 1618 樣本
+- 最佳 checkpoint：iter 800（核心功能 100%，跨分類 6/7）
+
+### Round 29 變更
+- 重平衡 fresh_milk_tea:rich_milk_tea 比例（2.85:1 → 1.60:1）
+- 新增同品項跨分類訓練資料（鮮奶茶 vs 奶茶 vs 純茶 vs 奶蓋）
+- 修正 system prompt 品項名錯誤（茶花烏龍 → 茶花紅烏龍）
+- 後端新增 ColdOnly 防護（fruit_tea 不可選熱飲）
