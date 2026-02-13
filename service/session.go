@@ -176,7 +176,7 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	}
 
 	// Parse and validate (supports intent-based and legacy formats)
-	result, err := ParseIntentResponse(raw, normalized)
+	result, err := ParseIntentResponse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("validation error: %w", err)
 	}

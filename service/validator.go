@@ -79,7 +79,7 @@ func stripModelTokens(raw string) string {
 //   - recommendations non-empty (no orders) → "recommend"
 //   - both non-empty → "order" (mixed)
 //   - both empty → "other" (chitchat/unrecognized)
-func ParseIntentResponse(raw string, userText ...string) (*ValidationResult, error) {
+func ParseIntentResponse(raw string) (*ValidationResult, error) {
 	raw = stripModelTokens(raw)
 
 	var resp model.IntentResponse
@@ -93,11 +93,7 @@ func ParseIntentResponse(raw string, userText ...string) (*ValidationResult, err
 	// Validate orders if present
 	if len(resp.Orders) > 0 {
 		orders, warnings := validateOrders(resp.Orders)
-		ut := ""
-		if len(userText) > 0 {
-			ut = userText[0]
-		}
-		orders = fillDefaults(orders, ut)
+		orders = fillDefaults(orders)
 		result.Orders = orders
 		result.Warnings = warnings
 	}
@@ -128,67 +124,18 @@ func ParseAndValidate(raw string) (*ValidationResult, error) {
 	return ParseIntentResponse(raw)
 }
 
-// categoryIDToSuffix maps category ID to the keyword customers use.
-func categoryIDToSuffix(catID string) string {
-	switch catID {
-	case "fresh_milk_tea":
-		return "鮮奶"
-	case "rich_milk_tea":
-		return "奶茶"
-	case "pure_tea":
-		return "純茶"
-	case "cloud_velvet":
-		return "奶蓋"
-	case "fruit_tea":
-		return "果茶"
-	default:
-		return ""
-	}
-}
-
-// clearUnspecifiedCategory resets category to empty for multi-category items
-// when the user text doesn't contain the item name adjacent to a category keyword,
-// so fillDefaults can assign the correct default instead of using the model's guess.
-func clearUnspecifiedCategory(orders []model.Order, userText string) {
-	for i := range orders {
-		o := &orders[i]
-		if o.Category == "" || o.NotOnMenu {
-			continue
-		}
-		// Check if this item exists in multiple categories
-		catCount := 0
-		for _, cat := range menu.Categories {
+// isValidItemCategory checks if an item+category combination exists on the menu.
+func isValidItemCategory(itemName, categoryID string) bool {
+	for _, cat := range menu.Categories {
+		if cat.ID == categoryID {
 			for _, item := range cat.Items {
-				if item.Name == o.Item {
-					catCount++
+				if item.Name == itemName {
+					return true
 				}
-			}
-		}
-		if catCount <= 1 {
-			continue
-		}
-		// Multi-category item: check if the model's chosen category suffix
-		// appears in the same segment as the item name.
-		// Segments are split by ";" and "。" to match multi-round voice input.
-		// e.g. "桂花輕烏龍要奶蓋" → item + suffix in same segment → keep
-		catSuffix := categoryIDToSuffix(o.Category)
-		if catSuffix != "" {
-			found := false
-			// Split by ; and 。 to get individual segments
-			segments := strings.FieldsFunc(userText, func(r rune) bool {
-				return r == ';' || r == '；' || r == '。'
-			})
-			for _, seg := range segments {
-				if strings.Contains(seg, o.Item) && strings.Contains(seg, catSuffix) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				o.Category = ""
 			}
 		}
 	}
+	return false
 }
 
 // parseLegacyResponse handles the old format: {"orders":[...]}
@@ -324,70 +271,10 @@ func getDefaultCategory(itemName string) string {
 	return ""
 }
 
-// inferCategoryFromText checks user text for category keywords near the item name.
-// Only applies to multi-category items. Returns category ID or empty string.
-func inferCategoryFromText(itemName, userText string) string {
-	if userText == "" {
-		return ""
-	}
-
-	// Only infer for multi-category items
-	catCount := 0
-	for _, cat := range menu.Categories {
-		for _, item := range cat.Items {
-			if item.Name == itemName {
-				catCount++
-			}
-		}
-	}
-	if catCount <= 1 {
-		return ""
-	}
-
-	// Ordered keyword → category mapping (鮮奶 before 奶茶 to avoid 鮮奶茶 mis-match)
-	type kw struct {
-		keyword string
-		catID   string
-	}
-	keywords := []kw{
-		{"鮮奶", "fresh_milk_tea"},
-		{"奶精", "rich_milk_tea"},
-		{"奶蓋", "cloud_velvet"},
-		{"純茶", "pure_tea"},
-		{"奶茶", "rich_milk_tea"},
-	}
-
-	// Split by ; and 。 to get individual segments
-	segments := strings.FieldsFunc(userText, func(r rune) bool {
-		return r == ';' || r == '；' || r == '。'
-	})
-
-	for _, seg := range segments {
-		if !strings.Contains(seg, itemName) {
-			continue
-		}
-		for _, k := range keywords {
-			if strings.Contains(seg, k.keyword) {
-				// Verify this item exists in this category
-				for _, cat := range menu.Categories {
-					if cat.ID == k.catID {
-						for _, item := range cat.Items {
-							if item.Name == itemName {
-								return k.catID
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return ""
-}
-
 // fillDefaults fills in default values for on-menu items where the model output null.
-// This handles: category, size, sugar, ice defaults so the model doesn't need to.
-func fillDefaults(orders []model.Order, userText string) []model.Order {
+// Category: trust model output, validate against menu, fallback to default if invalid/empty.
+// Size/Sugar/Ice: fill defaults and normalize aliases.
+func fillDefaults(orders []model.Order) []model.Order {
 	for i := range orders {
 		o := &orders[i]
 
@@ -396,13 +283,9 @@ func fillDefaults(orders []model.Order, userText string) []model.Order {
 			continue
 		}
 
-		// Fill default category: infer from user text first, then fallback
-		if o.Category == "" {
-			if cat := inferCategoryFromText(o.Item, userText); cat != "" {
-				o.Category = cat
-			} else {
-				o.Category = getDefaultCategory(o.Item)
-			}
+		// Validate category: trust model output, fallback if empty or invalid
+		if o.Category == "" || !isValidItemCategory(o.Item, o.Category) {
+			o.Category = getDefaultCategory(o.Item)
 		}
 
 		// Fill default size and enforce ColdOnly based on category
@@ -460,7 +343,7 @@ func fillDefaults(orders []model.Order, userText string) []model.Order {
 	return orders
 }
 
-// validateRecommendations validates recommended items exist on the menu
+// validateRecommendations validates recommended items and their categories against the menu
 func validateRecommendations(recs []model.Recommendation) ([]model.Recommendation, []string) {
 	var validated []model.Recommendation
 	var warnings []string
@@ -475,6 +358,10 @@ func validateRecommendations(recs []model.Recommendation) ([]model.Recommendatio
 				warnings = append(warnings, fmt.Sprintf("推薦品項「%s」不在菜單上，已移除", rec.Item))
 				continue
 			}
+		}
+		// Validate item+category combination; fallback to default if invalid
+		if rec.Category == "" || !isValidItemCategory(rec.Item, rec.Category) {
+			rec.Category = getDefaultCategory(rec.Item)
 		}
 		validated = append(validated, rec)
 	}
