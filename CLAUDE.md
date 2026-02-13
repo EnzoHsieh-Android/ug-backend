@@ -29,6 +29,7 @@ go test ./service/normalizer_test.go ./service/normalizer.go
 # Run diversity tests (requires server running)
 ./test_diversity_v2.sh    # Standard tests (37 cases)
 ./test_diversity_v3.sh    # Variation tests (40 cases)
+./test_generalization.sh  # Generalization tests (45 cases)
 
 # Docker
 docker build -t ug-backend .
@@ -68,7 +69,7 @@ main.go                 # Entry point, chi router setup
     ├── normalizer.go   # STT typo correction (exact + fuzzy Pinyin)
     ├── session.go      # Session lifecycle management
     ├── stt.go          # Qwen3-ASR-Flash STT client (DashScope API)
-    └── validator.go    # Order validation against menu
+    └── validator.go    # Order validation, fillDefaults, sugar/ice alias, inferCategoryFromText
 ```
 
 ## API Endpoints
@@ -127,21 +128,24 @@ Two-layer approach for handling speech-to-text errors:
 1. **Exact Replacement Table** (~60 known typos): Fast O(n) string replacement for common STT errors (e.g., "三因" → "三窨")
 
 2. **Pinyin Fuzzy Matching**: For unknown typos, uses sliding window with 80% similarity threshold on toneless Pinyin
+   - **Two-pass design**: Pass 1 scans all exact vocabulary matches and marks positions as protected; Pass 2 performs fuzzy matching only on unprotected positions
+   - Threshold 0.8（4/5 拼音匹配）防止 "一杯蜜桃紅" 誤匹配 "金杯蜜香紅"（3/5=60%）
 
 ## Menu & Validation (service/validator.go)
 
 12 menu items, all in Traditional Chinese. Valid options:
-- Sweetness: 正常糖, 少糖, 半糖, 微糖, 無糖
-- Ice: 正常冰, 少冰, 微冰, 去冰, 熱飲
+- Sweetness: 全糖, 五分糖, 三分糖, 一分糖, 無糖（正常糖/半糖/少糖/微糖 為別名）
+- Ice: 正常冰, 少冰, 微冰, 去冰, 熱飲（"熱"/"熱的" 為別名）
 - Size: M, L
 - Add-ons: 紅烏龍茶凍, 燕麥粒
 
 ### fillDefaults (預設值填入)
 模型輸出 null 表示「顧客未指定」，後端 `fillDefaults()` 負責填入預設值：
-- **Category**: pure_tea 優先 → rich_milk_tea → 第一個匹配的分類
+- **Category**: `inferCategoryFromText()` 從 user text 推斷（鮮奶/奶精/奶蓋/純茶/奶茶關鍵字）→ fallback `getDefaultCategory()` (pure_tea → rich_milk_tea → first match)
 - **Size**: 有尺寸的品項預設 M，單一尺寸品項設為 nil
-- **Sugar**: 預設「正常糖」
-- **Ice**: 預設「正常冰」
+- **Sugar**: 別名映射（正常糖→全糖、半糖→五分糖、少糖→五分糖、微糖→三分糖），預設「全糖」
+- **Ice**: 別名正規化（"熱"/"熱的" → "熱飲"），預設「正常冰」
+- **ColdOnly**: fruit_tea 品項若 ice="熱飲" 自動修正為「正常冰」
 
 ### Intent 推導
 模型不再輸出 intent，由 `ParseIntentResponse()` 從陣列內容推導：
@@ -172,10 +176,13 @@ LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分�
 ### Round 30 變更
 - 新增奶蓋/茶凍消歧訓練資料（cloud_velvet vs addon 紅烏龍茶凍）
 - 後端 ice 別名正規化（"熱"/"熱的" → "熱飲"）
+- 後端 sugar 別名映射（正常糖→全糖、半糖→五分糖、少糖→五分糖、微糖→三分糖）
 - 後端 inferCategoryFromText：從 user text 推斷多分類品項 category
-- 修復 normalizer fuzzy pinyin 重疊窗口 bug（exact-match 位置保護）
+- 後端 ColdOnly 防護：fruit_tea 品項 ice="熱飲" → "正常冰"
+- Normalizer 修復：fuzzy pinyin threshold 0.6→0.8 + 兩遍式 exact-match 保護
 - 訓練資料：1305 train + 313 valid = 1618 樣本
 - 最佳 checkpoint：iter 800（核心功能 100%，跨分類 6/7）
+- 測試：diversity 37/37 (100%) + generalization 45/45 (100%)
 
 ### Round 29 變更
 - 重平衡 fresh_milk_tea:rich_milk_tea 比例（2.85:1 → 1.60:1）
