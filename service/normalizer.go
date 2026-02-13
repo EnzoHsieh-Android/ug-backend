@@ -99,8 +99,9 @@ var vocabByLen map[int][]term
 var pinyinArgs pinyin.Args
 
 // similarity threshold: ratio of matching pinyin syllables.
-// 0.6 means 60% of syllables must match.
-const similarityThreshold = 0.6
+// 0.8 means 80% of syllables must match (e.g. 4/5 for 5-char terms).
+// Lower values (0.6) cause false positives: "一杯蜜桃紅" → "金杯蜜香紅" (3/5).
+const similarityThreshold = 0.8
 
 func init() {
 	pinyinArgs = pinyin.NewArgs()
@@ -200,10 +201,39 @@ func fuzzyReplace(text string) string {
 	}
 	var reps []replacement
 
+	// Pass 1: Find and protect ALL exact vocabulary matches first.
+	// This prevents fuzzy matches from stealing characters that belong
+	// to correct text (e.g. "一杯蜜桃紅" fuzzy-matching "金杯蜜香紅"
+	// before "蜜桃紅烏龍" gets a chance to be exact-matched).
 	for _, winSize := range windowSizes {
 		terms := vocabByLen[winSize]
 		for start := 0; start <= totalRunes-winSize; start++ {
-			// Skip if any position in this window was already replaced.
+			skip := false
+			for k := start; k < start+winSize; k++ {
+				if replaced[k] {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			window := string(runes[start : start+winSize])
+			for _, t := range terms {
+				if window == t.text {
+					for k := start; k < start+winSize; k++ {
+						replaced[k] = true
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Pass 2: Fuzzy-match remaining unprotected positions.
+	for _, winSize := range windowSizes {
+		terms := vocabByLen[winSize]
+		for start := 0; start <= totalRunes-winSize; start++ {
 			skip := false
 			for k := start; k < start+winSize; k++ {
 				if replaced[k] {
@@ -216,24 +246,6 @@ func fuzzyReplace(text string) string {
 			}
 
 			window := string(runes[start : start+winSize])
-
-			// Skip if window is already an exact vocabulary match.
-			isExact := false
-			for _, t := range terms {
-				if window == t.text {
-					isExact = true
-					break
-				}
-			}
-			if isExact {
-				// Mark exact-match positions as protected so fuzzy matches
-				// don't overlap and corrupt correct text.
-				for k := start; k < start+winSize; k++ {
-					replaced[k] = true
-				}
-				continue
-			}
-
 			windowPy := toPinyin(window)
 			if len(windowPy) == 0 {
 				continue
