@@ -69,7 +69,7 @@ main.go                 # Entry point, chi router setup
     ├── normalizer.go   # STT typo correction (exact + fuzzy Pinyin)
     ├── session.go      # Session lifecycle management
     ├── stt.go          # Qwen3-ASR-Flash STT client (DashScope API)
-    └── validator.go    # Order validation, fillDefaults, sugar/ice alias, inferCategoryFromText
+    └── validator.go    # Order validation, fillDefaults, sugar/ice alias normalization
 ```
 
 ## API Endpoints
@@ -141,7 +141,7 @@ Two-layer approach for handling speech-to-text errors:
 
 ### fillDefaults (預設值填入)
 模型輸出 null 表示「顧客未指定」，後端 `fillDefaults()` 負責填入預設值：
-- **Category**: `inferCategoryFromText()` 從 user text 推斷（鮮奶/奶精/奶蓋/純茶/奶茶關鍵字）→ fallback `getDefaultCategory()` (pure_tea → rich_milk_tea → first match)
+- **Category**: 信任模型輸出 → `isValidItemCategory()` 驗證 item+category 組合 → 無效或空值 fallback `getDefaultCategory()` (pure_tea → rich_milk_tea → first match)
 - **Size**: 有尺寸的品項預設 M，單一尺寸品項設為 nil
 - **Sugar**: 別名映射（正常糖→全糖、半糖→五分糖、少糖→五分糖、微糖→三分糖），預設「全糖」
 - **Ice**: 別名正規化（"熱"/"熱的" → "熱飲"），預設「正常冰」
@@ -177,7 +177,7 @@ LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分�
 - 新增奶蓋/茶凍消歧訓練資料（cloud_velvet vs addon 紅烏龍茶凍）
 - 後端 ice 別名正規化（"熱"/"熱的" → "熱飲"）
 - 後端 sugar 別名映射（正常糖→全糖、半糖→五分糖、少糖→五分糖、微糖→三分糖）
-- 後端 inferCategoryFromText：從 user text 推斷多分類品項 category
+- 後端重構：移除 inferCategoryFromText，改為信任模型輸出 + isValidItemCategory 驗證
 - 後端 ColdOnly 防護：fruit_tea 品項 ice="熱飲" → "正常冰"
 - Normalizer 修復：fuzzy pinyin threshold 0.6→0.8 + 兩遍式 exact-match 保護
 - 訓練資料：1305 train + 313 valid = 1618 樣本

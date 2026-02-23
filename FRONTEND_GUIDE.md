@@ -75,8 +75,8 @@ interface Order {
   item: string;          // 品項名稱，如 "三窨十五茉"
   category?: string;     // 分類 ID（見下方菜單結構）
   size: string | null;   // "M" | "L" | null（單一尺寸品項為 null）
-  sugar: string | null;  // "正常糖" | "少糖" | "半糖" | "微糖" | "無糖"
-  ice: string | null;    // "正常冰" | "少冰" | "微冰" | "去冰" | "熱飲"
+  sugar: string | null;  // "全糖" | "五分糖" | "三分糖" | "一分糖" | "無糖"（finalize 後為正式名稱）
+  ice: string | null;    // "正常冰" | "少冰" | "微冰" | "去冰" | "熱飲"（finalize 後已正規化）
   addon: string[];       // ["紅烏龍茶凍", "燕麥粒"]（空陣列 = 無加料）
   qty: number;           // 數量，最小 1
   note?: string;         // 備註
@@ -434,9 +434,25 @@ interface MenuItem {
 ### Null 與預設值
 
 - `size`, `sugar`, `ice` 可能為 `null`
-- Finalize 後後端已填入預設值（size=M, sugar=正常糖, ice=正常冰）
+- Finalize 後後端已填入預設值（size=M, sugar=全糖, ice=正常冰）
 - 前端不需自行處理預設值邏輯
 - 單一尺寸品項的 `size` 會是 `null`（不是 "L"），前端顯示時可忽略尺寸選擇
+
+### 甜度/冰量別名映射
+
+後端 `fillDefaults` 會將口語別名映射為正式名稱，**finalize 後前端收到的一律是映射後的值**：
+
+| 顧客說的（口語） | finalize 回傳（正式） |
+|-----------------|---------------------|
+| 正常糖 | 全糖 |
+| 半糖 | 五分糖 |
+| 少糖 | 五分糖 |
+| 微糖 | 三分糖 |
+| 熱 / 熱的 | 熱飲 |
+
+前端 UI 的甜度選項應使用正式名稱：**全糖、五分糖、三分糖、一分糖、無糖**。
+冰量選項：**正常冰、少冰、微冰、去冰、熱飲**。
+果茶（fruit_tea）僅供冷飲，若選熱飲後端會自動修正為正常冰。
 
 ### Intent 判讀
 
