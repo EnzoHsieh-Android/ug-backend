@@ -112,7 +112,7 @@ CreateSession → [AddSegment (audio → STT)] × N → Finalize → [UpdateOrde
 Finalize 內部流程：
   合併所有 segments (用 ";" 分隔) → NormalizeSTT → LLM Complete
   → ParseIntentResponse (validate + fillDefaults)
-  → 過濾已送出推薦 (SentRecommendations 去重)
+  → 推薦攔截 (SentRecommendations + 最新 segment 關鍵字判斷)
   → 合併 manual overrides → 回傳結果
 ```
 
@@ -153,8 +153,13 @@ Two-layer approach for handling speech-to-text errors:
 - recommendations 非空（無 orders）→ "recommend"
 - 兩者皆空 → "other"
 
-### 推薦去重 (SentRecommendations)
-Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時過濾已送出的推薦品項，避免重複推薦。Reset 時清空。
+### 推薦攔截 (SentRecommendations)
+Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時控制推薦行為：
+- **首次推薦**：直接送出，記錄已推薦品項
+- **後續 finalize**：檢查最新 segment 是否含推薦關鍵字（推薦/建議/還有其他/還有別的/有什麼/幫我選/換一個）
+  - 有關鍵字 → 放行新推薦（同品項仍去重）
+  - 無關鍵字 → 攔截所有推薦（避免修改訂單時冒出非預期推薦）
+- Reset 時清空，可重新推薦
 
 ## Key Design Decisions
 
