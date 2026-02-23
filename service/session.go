@@ -278,6 +278,21 @@ func (sm *SessionManager) mergeWithOverrides(s *model.Session, llmOrders []model
 			matched.override.BaseOrder = llmOrder
 			finalOrders = append(finalOrders, merged)
 		} else {
+			// Check if this LLM order matches a deleted override — if so, skip it
+			isDeleted := false
+			for _, ov := range s.Overrides {
+				if !ov.Deleted {
+					continue
+				}
+				if ov.BaseOrder.Item == llmOrder.Item {
+					isDeleted = true
+					break
+				}
+			}
+			if isDeleted {
+				continue
+			}
+
 			// New item from LLM — assign new ID
 			newID := nextOrderID(s)
 			llmOrder.ID = newID
