@@ -40,6 +40,10 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Normalize STT typos before sending to LLM
 	normalized := service.NormalizeSTT(req.Text)
+	log.Printf("[Order] 輸入: %s", req.Text)
+	if normalized != req.Text {
+		log.Printf("[Order] 校正: %s → %s", req.Text, normalized)
+	}
 
 	// Call LLM
 	raw, err := h.llm.Complete(normalized)
@@ -51,6 +55,8 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	log.Printf("[Order] LLM 原始輸出: %s", raw)
 
 	// Parse and validate (supports intent-based and legacy formats)
 	result, err := service.ParseIntentResponse(raw)
@@ -73,6 +79,8 @@ func (h *OrderHandler) HandleOrder(w http.ResponseWriter, r *http.Request) {
 		noteParts = append(noteParts, result.Warnings...)
 	}
 	note := strings.Join(noteParts, "；")
+
+	log.Printf("[Order] Intent: %s, 訂單: %d 筆, 推薦: %d 筆", result.Intent, len(result.Orders), len(result.Recommendations))
 
 	json.NewEncoder(w).Encode(model.APIResponse{
 		Success:         true,

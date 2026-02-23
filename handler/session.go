@@ -32,6 +32,7 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	s := h.sessionMgr.CreateSession()
+	log.Printf("[Session %s] 建立新工作階段", s.ID)
 
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
@@ -195,12 +196,19 @@ func (h *SessionHandler) UpdateOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[Session %s] UpdateOrders: 收到 %d 筆訂單", id, len(req.Orders))
+	for i, o := range req.Orders {
+		log.Printf("[Session %s] UpdateOrders 訂單 %d: id=%s item=%s category=%s", id, i+1, o.ID, o.Item, o.Category)
+	}
+
 	s, err := h.sessionMgr.UpdateOrders(id, req.Orders)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(model.SessionResponse{Error: err.Error()})
 		return
 	}
+
+	log.Printf("[Session %s] UpdateOrders: 完成, 最終 %d 筆訂單", id, len(s.Orders))
 
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
@@ -222,6 +230,8 @@ func (h *SessionHandler) ResetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[Session %s] 重置工作階段", id)
+
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
 		Status:    s.Status,
@@ -240,6 +250,8 @@ func (h *SessionHandler) ConfirmSession(w http.ResponseWriter, r *http.Request) 
 		json.NewEncoder(w).Encode(model.SessionResponse{Error: err.Error()})
 		return
 	}
+
+	log.Printf("[Session %s] 確認訂單 (%d 筆)", id, len(s.Orders))
 
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
@@ -261,6 +273,8 @@ func (h *SessionHandler) BackSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[Session %s] 返回修改", id)
+
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
 		Status:    s.Status,
@@ -281,6 +295,8 @@ func (h *SessionHandler) CompleteSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	log.Printf("[Session %s] 完成訂單", id)
+
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
 		Status:    s.Status,
@@ -300,6 +316,8 @@ func (h *SessionHandler) CancelSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[Session %s] 取消訂單", id)
+
 	json.NewEncoder(w).Encode(model.SessionResponse{
 		SessionID: s.ID,
 		Status:    s.Status,
@@ -317,6 +335,8 @@ func (h *SessionHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(model.SessionResponse{Error: err.Error()})
 		return
 	}
+
+	log.Printf("[Session %s] 刪除工作階段", id)
 
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -174,6 +174,7 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("LLM error: %w", err)
 	}
+	log.Printf("[Session %s] LLM 原始輸出: %s", id, raw)
 
 	// Parse and validate (supports intent-based and legacy formats)
 	result, err := ParseIntentResponse(raw)
@@ -186,15 +187,22 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 
 	s.Orders = finalOrders
 
-	// Filter out recommendations already sent to frontend
+	// Filter recommendations:
+	// - First time: always allow
+	// - After first recommendation sent: only allow if latest segment explicitly requests recommendations
 	if s.SentRecommendations == nil {
 		s.SentRecommendations = make(map[string]bool)
 	}
+	latestSegment := s.Segments[len(s.Segments)-1].Text
+	allowRecs := len(s.SentRecommendations) == 0 || containsRecRequest(latestSegment)
+
 	var newRecs []model.Recommendation
-	for _, rec := range result.Recommendations {
-		if !s.SentRecommendations[rec.Item] {
-			newRecs = append(newRecs, rec)
-			s.SentRecommendations[rec.Item] = true
+	if allowRecs {
+		for _, rec := range result.Recommendations {
+			if !s.SentRecommendations[rec.Item] {
+				newRecs = append(newRecs, rec)
+				s.SentRecommendations[rec.Item] = true
+			}
 		}
 	}
 	s.Recommendations = newRecs
@@ -639,6 +647,17 @@ func (sm *SessionManager) Cancel(id string) (*model.Session, error) {
 	s.UpdatedAt = time.Now()
 
 	return s, nil
+}
+
+// containsRecRequest checks if text contains recommendation-related keywords
+func containsRecRequest(text string) bool {
+	keywords := []string{"推薦", "建議", "還有其他", "還有別的", "有什麼", "幫我選", "換一個"}
+	for _, kw := range keywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // Helper functions
