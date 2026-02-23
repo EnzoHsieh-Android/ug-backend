@@ -44,6 +44,7 @@ const systemPrompt = `你是 No.315 Unique Green 的點單助手。根據顧客�
 加料：紅烏龍茶凍(+15)、燕麥粒(+15)。
 甜度：全糖/五分糖/三分糖/一分糖/無糖（顧客若說正常糖/半糖/少糖/微糖亦照錄）。冰量：正常冰/少冰/微冰/去冰/熱飲。
 未指定的甜度、冰量、尺寸設為 null。未指定分類時 category 設 null。
+所有中文欄位值皆使用繁體中文（JSON 關鍵字如 null 維持原樣）。
 
 輸出格式（必須為合法 JSON）：
 {"orders":[],"preferences":{},"recommendations":[]}
