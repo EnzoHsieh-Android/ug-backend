@@ -42,6 +42,7 @@ func init() {
 
 type ValidationResult struct {
 	Intent          string
+	Intents         []string
 	Orders          []model.Order
 	Recommendations []model.Recommendation
 	Note            string
@@ -105,14 +106,29 @@ func ParseIntentResponse(raw string) (*ValidationResult, error) {
 		result.Warnings = append(result.Warnings, recWarnings...)
 	}
 
-	// Derive intent from contents
-	switch {
-	case len(result.Orders) > 0:
-		result.Intent = "order"
-	case len(result.Recommendations) > 0:
-		result.Intent = "recommend"
-	default:
-		result.Intent = "other"
+	// Parse model intents if present
+	validIntents := map[string]bool{"order": true, "recommend": true, "modify": true, "other": true}
+	if len(resp.Intents) > 0 {
+		for _, intent := range resp.Intents {
+			if validIntents[intent] {
+				result.Intents = append(result.Intents, intent)
+			}
+		}
+	}
+
+	// Derive single intent: use intents[last] if available, fallback to array contents
+	if len(result.Intents) > 0 {
+		last := result.Intents[len(result.Intents)-1]
+		result.Intent = last
+	} else {
+		switch {
+		case len(result.Orders) > 0:
+			result.Intent = "order"
+		case len(result.Recommendations) > 0:
+			result.Intent = "recommend"
+		default:
+			result.Intent = "other"
+		}
 	}
 
 	return result, nil

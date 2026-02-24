@@ -39,6 +39,7 @@ type Preferences struct {
 
 // IntentResponse is the raw structure parsed from the LLM output
 type IntentResponse struct {
+	Intents         []string         `json:"intents,omitempty"`
 	Intent          string           `json:"intent"`
 	Orders          []Order          `json:"orders,omitempty"`
 	Recommendations []Recommendation `json:"recommendations,omitempty"`

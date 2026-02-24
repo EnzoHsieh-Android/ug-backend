@@ -181,20 +181,27 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("validation error: %w", err)
 	}
+	log.Printf("[Session %s] ParseIntentResponse: intents=%v, %d 筆訂單, %d 筆推薦", id, result.Intents, len(result.Orders), len(result.Recommendations))
 
 	// Apply field-level merge with overrides
+	log.Printf("[Session %s] mergeWithOverrides 前: s.Orders=%d, overrides=%d", id, len(s.Orders), len(s.Overrides))
 	finalOrders := sm.mergeWithOverrides(s, result.Orders)
+	log.Printf("[Session %s] mergeWithOverrides 後: finalOrders=%d", id, len(finalOrders))
 
 	s.Orders = finalOrders
 
 	// Filter recommendations:
 	// - First time: always allow
-	// - After first recommendation sent: only allow if latest segment explicitly requests recommendations
+	// - After first recommendation sent: only allow if latest intent is "recommend"
+	//   Fallback to keyword check when model doesn't output intents (backward compat)
 	if s.SentRecommendations == nil {
 		s.SentRecommendations = make(map[string]bool)
 	}
-	latestSegment := s.Segments[len(s.Segments)-1].Text
-	allowRecs := len(s.SentRecommendations) == 0 || containsRecRequest(latestSegment)
+	lastIntent := ""
+	if len(result.Intents) > 0 {
+		lastIntent = result.Intents[len(result.Intents)-1]
+	}
+	allowRecs := len(s.SentRecommendations) == 0 || lastIntent == "recommend"
 
 	var newRecs []model.Recommendation
 	if allowRecs {
@@ -463,6 +470,15 @@ func (sm *SessionManager) UpdateOrders(id string, newOrders []model.Order) (*mod
 		}
 	}
 
+	// All orders deleted → clear overrides for fresh start
+	// This prevents deleted overrides from blocking new LLM orders on next finalize
+	if len(newOrders) == 0 {
+		s.Overrides = make(map[string]*model.OrderOverride)
+		s.Orders = nil
+		s.UpdatedAt = time.Now()
+		return s, nil
+	}
+
 	// 2. New orders without ID -> manually added, assign new ID
 	for i := range newOrders {
 		if newOrders[i].ID == "" {
@@ -662,17 +678,6 @@ func (sm *SessionManager) Cancel(id string) (*model.Session, error) {
 	s.UpdatedAt = time.Now()
 
 	return s, nil
-}
-
-// containsRecRequest checks if text contains recommendation-related keywords
-func containsRecRequest(text string) bool {
-	keywords := []string{"推薦", "建議", "還有其他", "還有別的", "有什麼", "幫我選", "換一個"}
-	for _, kw := range keywords {
-		if strings.Contains(text, kw) {
-			return true
-		}
-	}
-	return false
 }
 
 // Helper functions

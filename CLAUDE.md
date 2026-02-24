@@ -112,7 +112,7 @@ CreateSession → [AddSegment (audio → STT)] × N → Finalize → [UpdateOrde
 Finalize 內部流程：
   合併所有 segments (用 ";" 分隔) → NormalizeSTT → LLM Complete
   → ParseIntentResponse (validate + fillDefaults)
-  → 推薦攔截 (SentRecommendations + 最新 segment 關鍵字判斷)
+  → 推薦攔截 (SentRecommendations + intents[last] 判斷)
   → 合併 manual overrides → 回傳結果
 ```
 
@@ -148,17 +148,17 @@ Two-layer approach for handling speech-to-text errors:
 - **ColdOnly**: fruit_tea 品項若 ice="熱飲" 自動修正為「正常冰」
 
 ### Intent 推導
-模型不再輸出 intent，由 `ParseIntentResponse()` 從陣列內容推導：
-- orders 非空 → "order"
-- recommendations 非空（無 orders）→ "recommend"
-- 兩者皆空 → "other"
+模型輸出 `intents` 陣列（per-segment 意圖分類），`ParseIntentResponse()` 解析後：
+- 有 intents → 用 `intents[last]` 作為主要 intent
+- 無 intents（舊模型）→ fallback：orders 非空 → "order"、recommendations 非空 → "recommend"、兩者皆空 → "other"
+- 合法 intent 值：`order` / `recommend` / `modify` / `other`
 
 ### 推薦攔截 (SentRecommendations)
 Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時控制推薦行為：
 - **首次推薦**：直接送出，記錄已推薦品項
-- **後續 finalize**：檢查最新 segment 是否含推薦關鍵字（推薦/建議/還有其他/還有別的/有什麼/幫我選/換一個）
-  - 有關鍵字 → 放行新推薦（同品項仍去重）
-  - 無關鍵字 → 攔截所有推薦（避免修改訂單時冒出非預期推薦）
+- **後續 finalize**：用模型輸出的 `intents[last]` 判斷
+  - `intents[last] == "recommend"` → 放行新推薦（同品項仍去重）
+  - 其他 intent → 攔截所有推薦（避免修改訂單時冒出非預期推薦）
 - Reset 時清空，可重新推薦
 
 ## Key Design Decisions
@@ -176,7 +176,15 @@ Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時控制
 LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分析與優化流程遵照 `finetune-optimization` skill（詳見 WORKFLOW.md）。
 
 目前模型：Qwen3-8B-UG-order-v10（Round 30, iter 800, 96% eval — 48/50, diversity 37/37 100%）
-上一版：Qwen3-8B-UG-order-v9（Round 29, iter 700, 96% — 48/50）
+下一版：Round 32 訓練中（intents 支援 + sugar/ice null 40% + 品項平衡）
+
+### Round 32 變更（準備中）
+- 新增 intents 陣列支援：模型輸出 per-segment intents，後端用 `intents[last]` 判斷推薦攔截
+- 後端移除關鍵字推薦攔截 `containsRecRequest()`，改為純 intents 判斷
+- 訓練資料大幅擴增：+47 null sugar/ice + 416 品項平衡 + 25 多輪推薦 = +488 樣本
+- 訓練資料：1907 train + 447 valid = 2354 樣本
+- Sugar null 比例 27.8% → 40.1%，Ice null 33.1% → 40.0%
+- 品項最大/最小比例 5.3x → 2.8x
 
 ### Round 30 變更
 - 新增奶蓋/茶凍消歧訓練資料（cloud_velvet vs addon 紅烏龍茶凍）
