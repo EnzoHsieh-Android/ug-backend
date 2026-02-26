@@ -175,13 +175,12 @@ Session 維護 `SentRecommendations map[string]bool`，多輪 finalize 時控制
 
 LLM fine-tuning 工作在 `/Users/xiechengru/ug-finetune/`，訓練前後的分析與優化流程遵照 `finetune-optimization` skill（詳見 WORKFLOW.md）。
 
-目前模型：Qwen3-8B-UG-order-v10（Round 30, iter 800, 96% eval — 48/50, diversity 37/37 100%）
-下一版：Round 32 訓練中（intents 支援 + sugar/ice null 40% + 品項平衡）
+目前模型：Qwen3-8B-UG-order-v11（Round 33, step 800, 100% eval — 60/60, 8-bit QLoRA on RunPod A40）
 
-### Round 32 變更（準備中）
-- 新增 intents 陣列支援：模型輸出 per-segment intents，後端用 `intents[last]` 判斷推薦攔截
-- 後端移除關鍵字推薦攔截 `containsRecRequest()`，改為純 intents 判斷
-- 訓練資料大幅擴增：+47 null sugar/ice + 416 品項平衡 + 25 多輪推薦 = +488 樣本
+### Round 33 變更
+- 8-bit QLoRA 訓練（RunPod A40 48GB），rank=32, alpha=64, 全 36 層
+- 新增 75 筆訓練資料：多輪 category=null(30) + 數量拆分 qty(19) + 雙份混合加料(9) + 桂花輕烏龍 null(3) + anchor(14)
+- 總資料量：1887 train + 442 valid = 2329 樣本
 - 訓練資料：1907 train + 447 valid = 2354 樣本
 - Sugar null 比例 27.8% → 40.1%，Ice null 33.1% → 40.0%
 - 品項最大/最小比例 5.3x → 2.8x

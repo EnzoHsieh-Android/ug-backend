@@ -44,15 +44,22 @@ const systemPrompt = `你是 No.315 Unique Green 的點單助手。根據顧客�
 加料：紅烏龍茶凍(+15)、燕麥粒(+15)。
 甜度：全糖/五分糖/三分糖/一分糖/無糖（顧客若說正常糖/半糖/少糖/微糖亦照錄）。冰量：正常冰/少冰/微冰/去冰/熱飲。
 未指定的甜度、冰量、尺寸設為 null。未指定分類時 category 設 null。
-所有中文欄位值皆使用繁體中文（JSON 關鍵字如 null 維持原樣）。
+
+intents 規則：
+- intents 陣列，每個元素對應一段輸入（以分號分隔），值為 order/recommend/modify/other
+- order：點餐或新增品項
+- recommend：請求推薦（含口味偏好、場景描述等隱含推薦）
+- modify：修改或取消既有品項
+- other：閒聊或無法辨識
+- 單段輸入時 intents 只有一個元素
 
 輸出格式（必須為合法 JSON）：
-{"orders":[],"preferences":{},"recommendations":[]}
+{"intents":[],"orders":[],"preferences":{},"recommendations":[]}
 - 顧客點餐：填入 orders，每筆格式 {"item":"品名","category":"分類","size":"M/L/null","ice":"冰量/null","sugar":"甜度/null","addon":[],"qty":1,"note":""}
 - 顧客想要推薦：填入 preferences（口味/溫度/場景/排除，無明確偏好時為空物件）與 recommendations（僅推薦 1 項），格式 {"item":"品名","category":"分類","reason":"推薦理由"}
 - 點餐同時想推薦：orders 和 recommendations 同時填入，preferences 一併填入
 - 閒聊或無法辨識：三個欄位皆為空
-- 若最後一段已做出點餐決定，清空 recommendations。`
+- 若 intents 中有 recommend，recommendations 必須填入推薦結果（後端決定是否顯示）`
 
 type LLMClient struct {
 	baseURL    string
@@ -86,6 +93,10 @@ type chatResponse struct {
 }
 
 func (c *LLMClient) Complete(userText string) (string, error) {
+	if strings.TrimSpace(userText) == "" {
+		return "", fmt.Errorf("empty input text")
+	}
+
 	reqBody := chatRequest{
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},

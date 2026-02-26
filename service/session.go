@@ -206,10 +206,8 @@ func (sm *SessionManager) FinalizeSession(id string) (*model.Session, error) {
 	var newRecs []model.Recommendation
 	if allowRecs {
 		for _, rec := range result.Recommendations {
-			if !s.SentRecommendations[rec.Item] {
-				newRecs = append(newRecs, rec)
-				s.SentRecommendations[rec.Item] = true
-			}
+			newRecs = append(newRecs, rec)
+			s.SentRecommendations[rec.Item] = true
 		}
 	}
 	s.Recommendations = newRecs

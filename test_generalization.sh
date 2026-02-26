@@ -75,15 +75,24 @@ test_order() {
                 continue
             fi
 
-            # Parse item:field=value
-            local item_name="${check%%:*}"
+            # Parse item[@index]:field=value
+            local item_part="${check%%:*}"
             local field_value="${check#*:}"
             local field="${field_value%%=*}"
             local expected="${field_value#*=}"
 
-            # Find the order by item name (use first match)
+            # Extract optional @index (e.g. 琥珀鐵觀音@1 → index 1)
+            local item_name match_index=0
+            if [[ "$item_part" == *@* ]]; then
+                item_name="${item_part%%@*}"
+                match_index="${item_part#*@}"
+            else
+                item_name="$item_part"
+            fi
+
+            # Find the order by item name (use match_index-th match)
             local order_json
-            order_json=$(echo "$response" | jq -c "[.orders[] | select(.item == \"$item_name\")] | .[0]")
+            order_json=$(echo "$response" | jq -c "[.orders[] | select(.item == \"$item_name\")] | .[$match_index]")
 
             if [ "$order_json" == "null" ] || [ -z "$order_json" ]; then
                 echo -e "${RED}  ✗ 找不到品項「$item_name」${NC}"
@@ -392,6 +401,65 @@ test_order "壓力：完整客製化" \
     "朱槿普洱紅鮮奶大杯三分糖微冰加紅烏龍茶凍" \
     "1" \
     "朱槿普洱紅:category=fresh_milk_tea|朱槿普洱紅:size=L|朱槿普洱紅:sugar=三分糖|朱槿普洱紅:ice=微冰|朱槿普洱紅:addon=紅烏龍茶凍"
+
+# ==================== 16. 雙份加料 ====================
+echo -e "\n${BLUE}【十六、雙份加料】${NC}"
+
+test_order "雙份加料：雙份茶凍" \
+    "琥珀鐵觀音鮮奶茶大杯半糖少冰加雙份茶凍" \
+    "1" \
+    "琥珀鐵觀音:category=fresh_milk_tea|琥珀鐵觀音:addon=紅烏龍茶凍,紅烏龍茶凍|琥珀鐵觀音:size=L"
+
+test_order "雙份加料：兩份燕麥" \
+    "金杯蜜香紅奶茶加兩份燕麥粒半糖少冰" \
+    "1" \
+    "金杯蜜香紅:category=rich_milk_tea|金杯蜜香紅:addon=燕麥粒,燕麥粒"
+
+test_order "雙份加料：雙份+單份混合" \
+    "桂花輕烏龍鮮奶茶中杯無糖去冰加雙份茶凍和燕麥" \
+    "1" \
+    "桂花輕烏龍:category=fresh_milk_tea|桂花輕烏龍:addon=紅烏龍茶凍,紅烏龍茶凍,燕麥粒"
+
+# ==================== 17. 多輪 category 獨立性 ====================
+echo -e "\n${BLUE}【十七、多輪 category 不沿用】${NC}"
+
+test_order "多輪：1st 鮮奶 → 2nd 不同品項未指定（不該沿用 fresh_milk_tea）" \
+    "琥珀鐵觀音鮮奶茶半糖少冰；再一杯金杯蜜香紅無糖去冰" \
+    "2" \
+    "琥珀鐵觀音:category=fresh_milk_tea|金杯蜜香紅:category=rich_milk_tea"
+
+test_order "多輪：1st 奶蓋 → 2nd 不同品項未指定（不該沿用 cloud_velvet）" \
+    "茶花紅烏龍奶蓋；再一杯桂花輕烏龍半糖少冰" \
+    "2" \
+    "茶花紅烏龍:category=cloud_velvet|桂花輕烏龍:category=pure_tea"
+
+test_order "多輪：1st 未指定 → 2nd 指定鮮奶（應正確辨識）" \
+    "金杯蜜香紅一杯半糖少冰；再一杯琥珀鐵觀音鮮奶大杯去冰" \
+    "2" \
+    "金杯蜜香紅:category=rich_milk_tea|琥珀鐵觀音:category=fresh_milk_tea|琥珀鐵觀音:size=L"
+
+test_order "多輪：1st 純茶 → 2nd 不同品項未指定（不該沿用 pure_tea）" \
+    "三窨十五茉純茶無糖去冰；再一杯米香玉露菁半糖少冰" \
+    "2" \
+    "三窨十五茉:category=pure_tea|米香玉露菁:category=pure_tea"
+
+# ==================== 18. 數量拆分 ====================
+echo -e "\n${BLUE}【十八、數量拆分（分類/客製）】${NC}"
+
+test_order "分類拆分：三杯桂花輕烏龍，兩杯奶茶一杯純茶（qty合併→2筆）" \
+    "三杯桂花輕烏龍，兩杯奶茶半糖少冰，一杯純茶無糖去冰" \
+    "2" \
+    "桂花輕烏龍:category=rich_milk_tea"
+
+test_order "分類拆分：兩杯琥珀鐵觀音，鮮奶茶+奶茶" \
+    "兩杯琥珀鐵觀音，鮮奶茶的大杯半糖去冰，奶茶的無糖少冰" \
+    "2" \
+    "琥珀鐵觀音:category=fresh_milk_tea|琥珀鐵觀音@1:category=rich_milk_tea"
+
+test_order "客製拆分：三杯三窨十五茉鮮奶茶，兩杯半糖一杯無糖（qty合併→2筆）" \
+    "三杯三窨十五茉鮮奶茶少冰，兩杯半糖一杯無糖" \
+    "2" \
+    "三窨十五茉:category=fresh_milk_tea"
 
 echo ""
 echo "========================================"

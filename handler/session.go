@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/xiechengru/ug-backend/model"
@@ -117,6 +118,15 @@ func (h *SessionHandler) AddSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[Session %s] ASR 轉錄結果: %s", id, result.Text)
+
+	// Reject empty ASR results to prevent sending empty text to LLM
+	trimmed := strings.TrimSpace(result.Text)
+	if trimmed == "" {
+		log.Printf("[Session %s] ASR 返回空文字，忽略此段", id)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(model.SegmentResponse{Error: "ASR 未偵測到語音內容"})
+		return
+	}
 
 	// Apply STT normalization so the segment text is corrected before storing
 	corrected := service.NormalizeSTT(result.Text)
