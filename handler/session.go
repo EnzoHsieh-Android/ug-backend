@@ -334,6 +334,56 @@ func (h *SessionHandler) CancelSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AddTextSegment handles POST /api/session/{id}/text-segment
+// Accepts {"text": "..."} and stores it directly without STT transcription.
+// Subsequent finalize flow is identical to the audio segment path.
+func (h *SessionHandler) AddTextSegment(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id := chi.URLParam(r, "id")
+
+	// Check if session exists
+	_, err := h.sessionMgr.GetSession(id)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(model.SegmentResponse{Error: err.Error()})
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(model.SegmentResponse{Error: "invalid request body: " + err.Error()})
+		return
+	}
+
+	if req.Text == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(model.SegmentResponse{Error: "text is required"})
+		return
+	}
+
+	log.Printf("[Session %s] 收到文字輸入: %s", id, req.Text)
+
+	// Add segment directly (bypass STT)
+	s, err := h.sessionMgr.AddSegment(id, req.Text)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(model.SegmentResponse{Error: err.Error()})
+		return
+	}
+
+	lastIdx := len(s.Segments) - 1
+	json.NewEncoder(w).Encode(model.SegmentResponse{
+		SegmentIndex:  lastIdx,
+		Text:          s.Segments[lastIdx].Text,
+		TotalSegments: len(s.Segments),
+	})
+}
+
 // DeleteSession handles DELETE /api/session/{id}
 func (h *SessionHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -41,6 +41,7 @@ func main() {
 		r.Get("/{id}", sessionHandler.GetSession)
 		r.Delete("/{id}", sessionHandler.DeleteSession)
 		r.Post("/{id}/segment", sessionHandler.AddSegment)
+		r.Post("/{id}/text-segment", sessionHandler.AddTextSegment)
 		r.Post("/{id}/finalize", sessionHandler.FinalizeSession)
 		r.Patch("/{id}/orders", sessionHandler.UpdateOrders)
 		r.Post("/{id}/reset", sessionHandler.ResetSession)
