@@ -76,11 +76,12 @@ func NewLLMClient(baseURL string) *LLMClient {
 // completionRequest uses /v1/completions with manually constructed prompt.
 // This bypasses vLLM's chat template and matches RunPod eval format exactly.
 type completionRequest struct {
-	Model       string   `json:"model"`
-	Prompt      string   `json:"prompt"`
-	Temperature float64  `json:"temperature"`
-	MaxTokens   int      `json:"max_tokens"`
-	Stop        []string `json:"stop"`
+	Model       string            `json:"model"`
+	Prompt      string            `json:"prompt"`
+	Temperature float64           `json:"temperature"`
+	MaxTokens   int               `json:"max_tokens"`
+	Stop        []string          `json:"stop"`
+	LogitBias   map[string]int    `json:"logit_bias,omitempty"`
 }
 
 type completionResponse struct {
@@ -105,6 +106,7 @@ func (c *LLMClient) Complete(userText string) (string, error) {
 		Temperature: 0,
 		MaxTokens:   256,
 		Stop:        []string{"<|im_end|>"},
+		LogitBias:   map[string]int{"151667": -100},
 	}
 
 	body, err := json.Marshal(reqBody)
