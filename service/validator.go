@@ -58,9 +58,17 @@ func stripModelTokens(raw string) string {
 	raw = strings.ReplaceAll(raw, "<|im_end|>", "")
 	raw = strings.TrimSpace(raw)
 
-	// Strip <think>...</think> tags from model output (handle multiple tags)
-	if idx := strings.LastIndex(raw, "</think>"); idx != -1 {
-		raw = strings.TrimSpace(raw[idx+len("</think>"):])
+	// Handle </think> tag: model may output {JSON}</think>{JSON} (duplication)
+	// or </think>{JSON} (standard). Pick the first complete JSON when possible.
+	if idx := strings.Index(raw, "</think>"); idx != -1 {
+		before := strings.TrimSpace(raw[:idx])
+		if len(before) > 0 && strings.HasPrefix(before, "{") {
+			// Duplication pattern: first copy before </think> is complete
+			raw = before
+		} else {
+			// Standard pattern: JSON comes after </think>
+			raw = strings.TrimSpace(raw[idx+len("</think>"):])
+		}
 	}
 
 	// Strip markdown code fences if present

@@ -73,22 +73,19 @@ func NewLLMClient(baseURL string) *LLMClient {
 	}
 }
 
-type chatRequest struct {
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
+// completionRequest uses /v1/completions with manually constructed prompt.
+// This bypasses vLLM's chat template and matches RunPod eval format exactly.
+type completionRequest struct {
+	Model       string   `json:"model"`
+	Prompt      string   `json:"prompt"`
+	Temperature float64  `json:"temperature"`
+	MaxTokens   int      `json:"max_tokens"`
+	Stop        []string `json:"stop"`
 }
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatResponse struct {
+type completionResponse struct {
 	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
+		Text string `json:"text"`
 	} `json:"choices"`
 }
 
@@ -97,13 +94,17 @@ func (c *LLMClient) Complete(userText string) (string, error) {
 		return "", fmt.Errorf("empty input text")
 	}
 
-	reqBody := chatRequest{
-		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userText},
-		},
+	// Construct prompt in Qwen3 chat format with /no_think (matches RunPod eval)
+	prompt := "<|im_start|>system\n" + systemPrompt + "<|im_end|>\n" +
+		"<|im_start|>user\n" + userText + "<|im_end|>\n" +
+		"<|im_start|>assistant\n/no_think\n"
+
+	reqBody := completionRequest{
+		Model:       "ug",
+		Prompt:      prompt,
 		Temperature: 0,
 		MaxTokens:   256,
+		Stop:        []string{"<|im_end|>"},
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -112,7 +113,7 @@ func (c *LLMClient) Complete(userText string) (string, error) {
 	}
 
 	resp, err := c.httpClient.Post(
-		c.baseURL+"/v1/chat/completions",
+		c.baseURL+"/v1/completions",
 		"application/json",
 		bytes.NewReader(body),
 	)
@@ -130,14 +131,14 @@ func (c *LLMClient) Complete(userText string) (string, error) {
 		return "", fmt.Errorf("llm returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var chatResp chatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+	var compResp completionResponse
+	if err := json.Unmarshal(respBody, &compResp); err != nil {
 		return "", fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	if len(chatResp.Choices) == 0 {
+	if len(compResp.Choices) == 0 {
 		return "", fmt.Errorf("llm returned no choices")
 	}
 
-	return chatResp.Choices[0].Message.Content, nil
+	return compResp.Choices[0].Text, nil
 }
